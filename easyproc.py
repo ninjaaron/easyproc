@@ -27,7 +27,7 @@ import shlex
 
 PIPE = -1
 STDOUT = -2
-DEVNULL -3
+DEVNULL = -3
 
 def run(cmd, **kwargs):
     '''
