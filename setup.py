@@ -7,7 +7,6 @@ setup(
     url='https://github.com/ninjaaron/easyproc',
     author='Aaron Christianson',
     author_email='ninjaaron@gmail.com',
-    license='MIT',
     keywords='shell pipe subprcess process scripting',
     classifiers=['Programming Language :: Python :: 3.5'],
     )
