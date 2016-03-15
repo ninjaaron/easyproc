@@ -2,9 +2,9 @@ from setuptools import setup, find_packages
 
 setup(
     name='easyproc',
-    version='0.1.0',
+    version='0.1.1',
     description='thin abstraction on subprocess.run to simplify admin scripts',
-    long_description=open('README.rst').read()
+    long_description=open('README.rst').read(),
     url='https://github.com/ninjaaron/easyproc',
     author='Aaron Christianson',
     author_email='ninjaaron@gmail.com',

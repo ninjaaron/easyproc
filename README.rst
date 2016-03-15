@@ -8,7 +8,7 @@ It addresses what I perceive to be three shortcomings in the Popen API
    universal_newlines everywhere, so you don't have to worry about
    decoding bytes.
 2. Piping a chain of processes together is not particularly intuitive
-   and takes a lot of extra work when not using ``shell=True``.
+   and takes a lot of extra work when not using shell=True.
    ``easyproc.pipe()`` provides a simple way to pipe a chain of shell
    commands into each other without the safety risk of granting a shell.
    Admittedly, if one is piping together a lot of shell commands, one
@@ -42,7 +42,9 @@ a running process.
 ``easyproc.grab()`` is like easyproc.run(), but it captures the stdout
 of the command. By default, it also splits the output into a list of
 lines, since many commands return output that is intended to be
-processed line by line. Turn off this behavior with ``split=False``.
+processed line by line. Turn off this behavior with split=False. *Note
+that unlike subprocess.check_output(), this does not catch errors
+without adding check=True!*
 ``easyproc.pipe()`` takes any number of commands as args and pipes them
 into each other in the order they are given. The output is captured and
 split, as with easyproc.grab(), unless otherwise specified.
