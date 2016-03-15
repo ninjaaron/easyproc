@@ -36,17 +36,25 @@ def run(cmd, **kwargs):
     key-word parameters to subprocess.run(). Returns a CompletedProcess
     object Refer to the official subprocess module documentation for
     more info.
-
     '''
     cmd = shlex.split(cmd) if isinstance(cmd, str) else cmd
     return sp.run(cmd, universal_newlines=True, **kwargs)
+
+
+def Popen(cmd, **kwargs):
+    '''
+    Same as run(), but returns a Popen object.
+    '''
+    cmd = shlex.split(cmd) if isinstance(cmd, str) else cmd
+    return sp.Popen(cmd, universal_newlines=True, **kwargs)
 
 
 def grab(cmd, split=True, **kwargs):
     '''
     similar to the run() function, but returns the output of the
     command. By default, it returns the output as a list of lines (good
-    for iterating). Use split=False to return a string.
+    for iterating). Use split=False to return a string. Doesn't catche errors
+    by default. Use `check=True` to catch errors.
     '''
     out = run(cmd, stdout=PIPE, **kwargs).stdout
     if split:
