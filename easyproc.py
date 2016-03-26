@@ -49,14 +49,14 @@ def Popen(cmd, **kwargs):
     return sp.Popen(cmd, universal_newlines=True, **kwargs)
 
 
-def grab(cmd, split=True, **kwargs):
+def grab(cmd, split=True, check=True, **kwargs):
     '''
     similar to the run() function, but returns the output of the
     command. By default, it returns the output as a list of lines (good
-    for iterating). Use split=False to return a string. Doesn't catche errors
-    by default. Use `check=True` to catch errors.
+    for iterating). Use split=False to return a string. Catches errors
+    by default. Use `check=False` to skip.
     '''
-    out = run(cmd, stdout=PIPE, **kwargs).stdout
+    out = run(cmd, stdout=PIPE, check=check, **kwargs).stdout
     if split:
         return out.splitlines()
     else:

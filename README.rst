@@ -5,7 +5,7 @@ It addresses what I perceive to be three shortcomings in the Popen API
 
 1. Input and output streams default to bytes. This is manifestly
    ridiculous in Python 3. easyproc turns on
-   universal_newlines everywhere, so you don't have to worry about
+   *universal_newlines* everywhere, so you don't have to worry about
    decoding bytes.
 2. Piping a chain of processes together is not particularly intuitive
    and takes a lot of extra work when not using shell=True.
@@ -34,21 +34,32 @@ subprocess module.
 *easyproc* provides four simple functions for messing with shell
 commands. ``easyproc.run()`` simply runs the command you give it through
 ``shlex.split()`` if it is a string, and then sends it to
-``suprocess.run()`` with universal_newlines turned on, and all
+``suprocess.run()`` with *universal_newlines* turned on, and all
 additional kwargs passed along as well. ``easyproc.Popen()`` does the
 same, but it returns a Popen instance, in case you need to interact with
 a running process.
 
-``easyproc.grab()`` is like easyproc.run(), but it captures the stdout
-of the command. By default, it also splits the output into a list of
-lines, since many commands return output that is intended to be
-processed line by line. Turn off this behavior with split=False. *Note
-that unlike subprocess.check_output(), this does not catch errors
-without adding check=True!*
+``easyproc.grab()`` is like ``easyproc.run()``, but it captures the
+stdout of the command. By default, it also splits the output into a list
+of lines, since many commands return output that is intended to be
+processed line by line. Turn off this behavior with *split=False*. Note
+that this catches errors. Use *check=False* to disable.
+
 ``easyproc.pipe()`` takes any number of commands as args and pipes them
 into each other in the order they are given. The output is captured and
-split, as with easyproc.grab(), unless otherwise specified.
+split, as with ``easyproc.grab()``, unless otherwise specified. if you
+plan on passing a lot of subprocess.run/Popen parameters to
+easyproc.pipe, you may want to look at the doc string to see what it
+will do.
 
 *easyproc* also provides the three special variables from the subprocess
 module, ``PIPE``, ``STDOUT``, and ``DEVNULL``, for those who know and
 care what they do.
+
+While the ``input`` parameter for easyproc functions is inherited
+directly from ``suprocess.run()``, it may be useful for those avoiding
+the subprocess docs to here note that this parameter is used to pass
+text to the STDIN of a command (and doesn't require the use of
+stdin=PIPE); i.e. it's like ``echo "text"|command``. In suprocess, the
+text must be bytes by default. In easyproc, as with all other streams,
+it ought to be a string.
