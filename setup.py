@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name='easyproc',
-    version='0.1.1',
+    version='0.3.0',
     description='thin abstraction on subprocess.run to simplify admin scripts',
     long_description=open('README.rst').read(),
     url='https://github.com/ninjaaron/easyproc',
@@ -10,5 +10,5 @@ setup(
     author_email='ninjaaron@gmail.com',
     keywords='shell pipe subprcess process scripting',
     py_modules = ['easyproc'],
-    classifiers=['Programming Language :: Python :: 3.5'],)
-
+    classifiers=['Programming Language :: Python :: 3.5'],
+)
