@@ -9,8 +9,6 @@ class ProcOutput(str):
     ProcOutput acts like a string in most cases, but acts like a tuple of lines
     for most sequence operations. (except it keeps str.count)
     """
-    # I don't dare overried str's __init__ method, so I use this property to
-    # initialize a value.
     @property
     def tuple(self):
         try:
@@ -23,7 +21,7 @@ class ProcOutput(str):
         return iter(self.tuple)
 
     def __repr__(self):
-        return "ProcOutput('%s')" % self
+        return "ProcOutput(%s)" % repr(self.str)
 
     def __getitem__(self, index):
         return self.tuple[index]
@@ -65,8 +63,8 @@ class CompletedProcess(object):
     def __init__(self, args, returncode, stdout=None, stderr=None):
         self.args = args
         self.returncode = returncode
-        self.stdout = ProcOutput(stdout) if stdout else stdout
-        self.stderr = ProcOutput(stderr) if stderr else stderr
+        self.stdout = ProcOutput(stdout.rstrip()) if stdout else stdout
+        self.stderr = ProcOutput(stderr.rstrip()) if stderr else stderr
 
     def __repr__(self):
         args = ['args={!r}'.format(self.args),
