@@ -153,18 +153,22 @@ def grab(cmd, both=False, **kwargs):
         return run(cmd, stdout=PIPE, **kwargs).stdout
 
 
-def pipe(*args, input=None, stdin=None, stderr=None, **kwargs):
+def pipe(commands, grab=False, input=None, stdin=None, stderr=None, **kwargs):
     '''
-    like the grab() function, but will take a list of commands and pipe
-    them into each other, one after another. If pressent, the 'stderr'
-    parameter will be passed to all commands. 'input' and 'stdin' will
-    be passed to the initial command all other **kwargs will be passed
-    to the final command.
+    like the run() function, but will take a list of commands and pipe them
+    into each other, one after another. If pressent, the 'stderr' parameter
+    will be passed to all commands. Either 'input' or 'stdin' will be passed to
+    the initial command all other **kwargs will be passed to the final command.
+
+    If grab=True, stdout will be returned as a ProcOutput instance.
     '''
-    out = grab(args[0], input=input, stdin=stdin, stderr=stderr)
-    for cmd in args[1:-1]:
+    out = grab(commands[0], input=input, stdin=stdin, stderr=stderr)
+    for cmd in commands[1:-1]:
         out = grab(cmd, input=out, stderr=stderr)
-    return grab(args[-1], input=out, stderr=stderr, **kwargs)
+    if grab:
+        return grab(commands[-1], input=out, stderr=stderr, **kwargs)
+    else:
+        return run(commands[-1], input=out, stderr=stderr, **kwargs)
 
 
 # all code after this point is taken directly from the subprocess module, just
