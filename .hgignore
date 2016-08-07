@@ -1,6 +1,8 @@
-.*\.egg-info
+syntax: glob
+
+*.egg-info
 *.egg-info
 dist
-.*\.pyc
+*.pyc
 *.pyc
 __pycache__
