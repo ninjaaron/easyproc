@@ -1,6 +1,5 @@
 import subprocess as sp
 import shlex
-import six
 import io
 import os
 from tempfile import TemporaryFile
@@ -62,14 +61,19 @@ class ProcStream(object):
                 ("'proc' must be a subprocess.Popen instance.")
         self.cmd = cmd
         self.check = check
-        self.stream = self._set_stream()
+        self.stream = self.proc.stdout
 
-        # self.ok_codes is created with self.__call__ to provide an appropriate
-        # interface for eggshell
-        self(*ok_codes)
-
-    def _set_stream(self):
-        return self.proc.stdout
+        self.ok_codes = set()
+        if isinstance(ok_codes, int):
+            self.ok_codes.add(ok_codes)
+        elif ok_codes == ALL:
+            self.check = False
+        else:
+            for code in ok_codes:
+                if isinstance(code, int):
+                    self.ok_codes.add(code)
+                else:
+                    self.ok_codes.update(code)
 
     @property
     def tuple(self):
@@ -130,17 +134,6 @@ class ProcStream(object):
         self.stream = tmp
         self.stream.seek(0)
         self.check_code()
-
-    def __call__(self, *args):
-        for arg in args:
-            if arg == ALL:
-                self.check = False
-                break
-            if isinstance(arg, int):
-                self.ok_codes.add(arg)
-            else:
-                self.ok_codes.update(arg)
-        return self
 
     def __str__(self):
         return self.str
@@ -227,7 +220,7 @@ def Popen(cmd, universal_newlines=True, shell=False, **kwargs):
 
 
 # this is only very slightly modifided from subprocess.run in 3.5
-def run(cmd, input=None, timeout=None, check=True, **kwargs):
+def run(cmd, ok_codes=0, input=None, timeout=None, check=True, **kwargs):
     """A clone of subprocess.run with a few small differences:
 
         - universal_newlines enabled by default (unicode streams)
@@ -236,39 +229,47 @@ def run(cmd, input=None, timeout=None, check=True, **kwargs):
         - stdout and stderr attributes of output are ProcOutput instances,
           rather than regular strings (or byte-strings).
 
-
     As with subprocess.run, a string may be piped to the command's stdin via
     the input arguments, and  all other kwargs are passed to Popen.
     The "timeout" option is not supported on Python 2.
     """
+    if isinstance(ok_codes, int):
+        ok_codes = {ok_codes}
+    elif ok_codes == ALL:
+        check = False
+    else:
+        new_ok_codes = set()
+        for code in ok_codes:
+            if isinstance(code, int):
+                new_ok_codes.add(code)
+            else:
+                new_ok_codes.update(code)
+        ok_codes = new_ok_codes
     if input is not None:
         if 'stdin' in kwargs:
             raise ValueError('stdin and input arguments may not both be used.')
         kwargs['stdin'] = PIPE
 
     proc = Popen(cmd, **kwargs)
-    if six.PY2:
-        stdout, stderr = proc.communicate(input)
-    else:
-        try:
-            stdout, stderr = proc.communicate(input, timeout=timeout)
-        except TimeoutExpired:
-            proc.kill()
-            stdout, stderr = proc.communicate()
-            raise TimeoutExpired(proc.args, timeout, output=stdout,
-                                 stderr=stderr)
-        except:
-            proc.kill()
-            proc.wait()
-            raise
+    try:
+        stdout, stderr = proc.communicate(input, timeout=timeout)
+    except TimeoutExpired:
+        proc.kill()
+        stdout, stderr = proc.communicate()
+        raise TimeoutExpired(proc.args, timeout, output=stdout,
+                             stderr=stderr)
+    except:
+        proc.kill()
+        proc.wait()
+        raise
     retcode = proc.poll()
-    if check and retcode:
+    if check and retcode not in ok_codes:
         raise CalledProcessError(retcode, cmd,
                                  output=stdout, stderr=stderr)
     return CompletedProcess(cmd, retcode, stdout, stderr)
 
 
-def grab(cmd, input=None, both=False, **kwargs):
+def grab(cmd, ok_codes=0, input=None, both=False, **kwargs):
     """takes all the same arguments as run(), but captures stdout and returns
     only that. Very practical for iterating on command output other immediate
     uses.
@@ -285,9 +286,10 @@ def grab(cmd, input=None, both=False, **kwargs):
         kwargs['stdin'] = stdin
 
     if both:
-        return ProcStream(cmd, stdout=PIPE, stderr=STDOUT, **kwargs)
+        return ProcStream \
+            (cmd, ok_codes=ok_codes, stdout=PIPE, stderr=STDOUT, **kwargs)
     else:
-        return ProcStream(cmd, stdout=PIPE, **kwargs)
+        return ProcStream(cmd, ok_codes=ok_codes, stdout=PIPE, **kwargs)
 
 
 def pipe(commands, grab_it=False, input=None, stderr=None, **kwargs):
