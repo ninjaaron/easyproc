@@ -233,39 +233,30 @@ def run(cmd, ok_codes=0, input=None, timeout=None, check=True, **kwargs):
     the input arguments, and  all other kwargs are passed to Popen.
     The "timeout" option is not supported on Python 2.
     """
-    if isinstance(ok_codes, int):
-        ok_codes = {ok_codes}
-    elif ok_codes == ALL:
-        check = False
-    else:
-        new_ok_codes = set()
-        for code in ok_codes:
-            if isinstance(code, int):
-                new_ok_codes.add(code)
-            else:
-                new_ok_codes.update(code)
-        ok_codes = new_ok_codes
     if input is not None:
         if 'stdin' in kwargs:
             raise ValueError('stdin and input arguments may not both be used.')
         kwargs['stdin'] = PIPE
 
     proc = Popen(cmd, **kwargs)
-    try:
-        stdout, stderr = proc.communicate(input, timeout=timeout)
-    except TimeoutExpired:
-        proc.kill()
-        stdout, stderr = proc.communicate()
-        raise TimeoutExpired(proc.args, timeout, output=stdout,
-                             stderr=stderr)
-    except:
-        proc.kill()
-        proc.wait()
-        raise
+    stdout = ProcStream \
+            (cmd, proc=proc, ok_codes=ok_codes, check=check, **kwargs)
+    stdout = ProcErr \
+            (cmd, proc=proc, ok_codes=ok_codes, check=check, **kwargs)
+    if timeout:
+        try:
+            proc.wait(timeout=timeout)
+        except TimeoutExpired:
+            proc.kill()
+            raise TimeoutExpired(proc.args, timeout, output=stdout,
+                                 stderr=stderr)
+        except:
+            proc.kill()
+            proc.wait()
+            raise
     retcode = proc.poll()
     if check and retcode not in ok_codes:
         raise CalledProcessError(retcode, cmd,
-                                 output=stdout, stderr=stderr)
     return CompletedProcess(cmd, retcode, stdout, stderr)
 
 
