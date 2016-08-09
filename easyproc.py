@@ -33,7 +33,7 @@ class ProcStream(object):
                     self.ok_codes.update(code)
 
     def _set_stream(self):
-        return self.proc.stderr
+        return self.proc.stdout
 
     @property
     def tuple(self):
@@ -116,7 +116,7 @@ class ProcStream(object):
                 self.cmd,
                 output=self.proc.stdout,
                 stderr=self.proc.stderr)
-            return returncode
+        return retcode
 
     def index(self, object):
         return self.tuple.index(object)
@@ -207,19 +207,6 @@ def run(
             raise ValueError('stdin and input arguments may not both be used.')
         kwargs['stdin'] = PIPE
 
-    _ok_codes = set()
-    if isinstance(ok_codes, int):
-        _ok_codes.add(ok_codes)
-    elif ok_codes == ALL:
-        self.check = False
-    else:
-        for code in ok_codes:
-            if isinstance(code, int):
-                _ok_codes.add(code)
-            else:
-                _ok_codes.update(code)
-    ok_codes = _ok_codes
-
     proc = Popen(cmd, **kwargs)
     if stdout:
         stdout = ProcStream \
@@ -227,9 +214,14 @@ def run(
     if stderr:
         stderr = ProcErr \
                     (cmd, proc=proc, ok_codes=ok_codes, check=check, **kwargs)
+
+    if not stdout and not stderr:
+        stream = ProcStream \
+                    (cmd, proc=proc, ok_codes=ok_codes, check=check, **kwargs)
+
     if timeout:
         try:
-            retcode = proc.wait(timeout=timeout)
+            proc.wait(timeout=timeout)
         except TimeoutExpired:
             proc.kill()
             raise TimeoutExpired(proc.args, timeout, output=stdout,
@@ -238,10 +230,8 @@ def run(
             proc.kill()
             proc.wait()
             raise
-    else:
-        retcode = proc.wait(timeout=timeout)
-    if check and retcode not in ok_codes:
-        raise CalledProcessError(retcode, cmd, output=stdout, stderr=stderr)
+
+    retcode = stream.check_code()
     return CompletedProcess(cmd, retcode, stdout, stderr)
 
 
