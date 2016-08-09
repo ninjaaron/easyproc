@@ -1,5 +1,6 @@
 syntax: glob
 
+venv*
 *.egg-info
 *.egg-info
 dist

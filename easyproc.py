@@ -55,7 +55,7 @@ class ProcStream(object):
         elif '_tpl' in self.__dict__:
             self._str = '\n'.join(self._tpl)
         else:
-            self._str = self.stream.read().rstrip()
+            self._str = self.read().rstrip()
             self.stream.close()
             self.check_code()
 
@@ -63,7 +63,8 @@ class ProcStream(object):
 
     @property
     def cheap(self):
-        yield from map(str.rstrip, self.stream)
+        for i in map(str.rstrip, self.stream):
+            yield i
         self.check_code()
 
     def __getattr__(self, name):
