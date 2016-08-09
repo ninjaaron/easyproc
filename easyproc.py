@@ -6,49 +6,6 @@ from tempfile import TemporaryFile
 
 ALL = 'all'
 
-class ProcOutput(str):
-    """subclass of str designed for handling command output.
-
-    ProcOutput acts like a string in most cases, but acts like a tuple of lines
-    for most sequence operations. (except it keeps str.count)
-    """
-    @property
-    def tuple(self):
-        try:
-            return self._tpl
-        except AttributeError:
-            self._tpl = tuple(self.splitlines())
-            return self._tpl
-
-    def __iter__(self):
-        return iter(self.tuple)
-
-    def __repr__(self):
-        return "ProcOutput(%s)" % repr(self.str)
-
-    def __getitem__(self, index):
-        return self.tuple[index]
-
-    def __len__(self):
-        return len(self.tuple)
-
-    def __reversed__(self):
-        return reversed(self.tuple)
-
-        if isinstance(other, ProcOutput):
-            return ProcOutput(str(self) + other)
-
-        elif isinstance(other, tuple):
-            return self.tuple + other
-        else:
-            return str(self) + other
-
-    def index(self, value):
-        """return first index of value. Raises ValueError if The
-        value is not present.
-        """
-        return self.tuple.index(value)
-
 
 class ProcStream(object):
     def __init__(self, cmd, proc=None, ok_codes=0, check=True, **kwargs):
@@ -61,7 +18,7 @@ class ProcStream(object):
                 ("'proc' must be a subprocess.Popen instance.")
         self.cmd = cmd
         self.check = check
-        self.stream = self.proc.stdout
+        self.stream = self._set_stream()
 
         self.ok_codes = set()
         if isinstance(ok_codes, int):
@@ -74,6 +31,9 @@ class ProcStream(object):
                     self.ok_codes.add(code)
                 else:
                     self.ok_codes.update(code)
+
+    def _set_stream(self):
+        return self.proc.stderr
 
     @property
     def tuple(self):
@@ -95,7 +55,7 @@ class ProcStream(object):
         elif '_tpl' in self.__dict__:
             self._str = '\n'.join(self._tpl)
         else:
-            self._str = self.read().rstrip()
+            self._str = self.stream.read().rstrip()
             self.stream.close()
             self.check_code()
 
@@ -156,6 +116,7 @@ class ProcStream(object):
                 self.cmd,
                 output=self.proc.stdout,
                 stderr=self.proc.stderr)
+            return returncode
 
     def index(self, object):
         return self.tuple.index(object)
@@ -170,7 +131,7 @@ class CompletedProcess(object):
     """A process that has finished running.
 
     This is returned by run(). The distinction between this and the form found
-    in the subprocess module is that stdin and stderr are ProcOutput instances,
+    in the subprocess module is that stdin and stderr are ProcStream instances,
     rather than byte-strings.
 
     Attributes:
@@ -182,16 +143,16 @@ class CompletedProcess(object):
     def __init__(self, args, returncode, stdout=None, stderr=None):
         self.args = args
         self.returncode = returncode
-        self.stdout = ProcOutput(stdout.rstrip()) if stdout else stdout
-        self.stderr = ProcOutput(stderr.rstrip()) if stderr else stderr
+        self.stdout = stdout
+        self.stderr = stderr
 
     def __repr__(self):
         args = ['args={!r}'.format(self.args),
                 'returncode={!r}'.format(self.returncode)]
         if self.stdout is not None:
-            args.append('stdout={!r}'.format(self.stdout))
+            args.append('stdout={!r}'.format(self.stdout.str))
         if self.stderr is not None:
-            args.append('stderr={!r}'.format(self.stderr))
+            args.append('stderr={!r}'.format(self.stderr.str))
         return "{}({})".format(type(self).__name__, ', '.join(args))
 
     def check_returncode(self):
@@ -219,8 +180,16 @@ def Popen(cmd, universal_newlines=True, shell=False, **kwargs):
                     shell=shell, **kwargs)
 
 
-# this is only very slightly modifided from subprocess.run in 3.5
-def run(cmd, ok_codes=0, input=None, timeout=None, check=True, **kwargs):
+# this was originally subprocess.run from 3.5. Now... it's different...
+def run(
+        cmd,
+        ok_codes=0,
+        input=None,
+        timeout=None,
+        check=True,
+        stdout=None,
+        stderr=None,
+        **kwargs):
     """A clone of subprocess.run with a few small differences:
 
         - universal_newlines enabled by default (unicode streams)
@@ -238,14 +207,29 @@ def run(cmd, ok_codes=0, input=None, timeout=None, check=True, **kwargs):
             raise ValueError('stdin and input arguments may not both be used.')
         kwargs['stdin'] = PIPE
 
+    _ok_codes = set()
+    if isinstance(ok_codes, int):
+        _ok_codes.add(ok_codes)
+    elif ok_codes == ALL:
+        self.check = False
+    else:
+        for code in ok_codes:
+            if isinstance(code, int):
+                _ok_codes.add(code)
+            else:
+                _ok_codes.update(code)
+    ok_codes = _ok_codes
+
     proc = Popen(cmd, **kwargs)
-    stdout = ProcStream \
-            (cmd, proc=proc, ok_codes=ok_codes, check=check, **kwargs)
-    stdout = ProcErr \
-            (cmd, proc=proc, ok_codes=ok_codes, check=check, **kwargs)
+    if stdout:
+        stdout = ProcStream \
+                    (cmd, proc=proc, ok_codes=ok_codes, check=check, **kwargs)
+    if stderr:
+        stderr = ProcErr \
+                    (cmd, proc=proc, ok_codes=ok_codes, check=check, **kwargs)
     if timeout:
         try:
-            proc.wait(timeout=timeout)
+            retcode = proc.wait(timeout=timeout)
         except TimeoutExpired:
             proc.kill()
             raise TimeoutExpired(proc.args, timeout, output=stdout,
@@ -254,9 +238,10 @@ def run(cmd, ok_codes=0, input=None, timeout=None, check=True, **kwargs):
             proc.kill()
             proc.wait()
             raise
-    retcode = proc.poll()
+    else:
+        retcode = proc.wait(timeout=timeout)
     if check and retcode not in ok_codes:
-        raise CalledProcessError(retcode, cmd,
+        raise CalledProcessError(retcode, cmd, output=stdout, stderr=stderr)
     return CompletedProcess(cmd, retcode, stdout, stderr)
 
 
