@@ -119,8 +119,8 @@ class ProcStream(object):
                 stderr=self.proc.stderr)
         return retcode
 
-    def index(self, object):
-        return self.tuple.index(object)
+    def index(self, item):
+        return self.tuple.index(item)
 
 
 class ProcErr(ProcStream):
@@ -163,7 +163,8 @@ class CompletedProcess(object):
                                      self.stderr)
 
 
-def Popen(cmd, universal_newlines=True, shell=False, **kwargs):
+def Popen(cmd, input=None, stdin=None,
+          universal_newlines=True, shell=False, **kwargs):
     """All args are passed directly to subprocess.Popen except cmd. If cmd is a
     string and shell=False (default), it will be sent through shlex.split prior
     to being sent to subprocess.Popen as *args.
@@ -171,26 +172,26 @@ def Popen(cmd, universal_newlines=True, shell=False, **kwargs):
     The only other difference is that this defualts universal_newlines to True
     (unicode streams).
     """
+    if input is not None:
+        if stdin is not None:
+            raise ValueError('stdin and input arguments may not both be used.')
+        stdin = TemporaryFile('w+')
+        stdin.write(input)
+        stdin.seek(0)
+
+    elif isinstance(stdin, ProcStream):
+       stdin = stdin.stream
+
     if isinstance(cmd, str) and shell == False:
         cmd = shlex.split(cmd)
 
-    if isinstance(kwargs.get('stdin'), ProcStream):
-        kwargs['stdin'] = kwargs['stdin'].stream
-
-    return sp.Popen(cmd, universal_newlines=universal_newlines,
+    return sp.Popen(cmd, stdin=stdin, universal_newlines=universal_newlines,
                     shell=shell, **kwargs)
 
 
 # this was originally subprocess.run from 3.5. Now... it's different...
-def run(
-        cmd,
-        ok_codes=0,
-        input=None,
-        timeout=None,
-        check=True,
-        stdout=None,
-        stderr=None,
-        **kwargs):
+def run(cmd, ok_codes=0, timeout=None, check=True,
+        stdout=None, stderr=None, **kwargs):
     """A clone of subprocess.run with a few small differences:
 
         - universal_newlines enabled by default (unicode streams)
@@ -203,30 +204,19 @@ def run(
     the input arguments, and  all other kwargs are passed to Popen.
     The "timeout" option is not supported on Python 2.
     """
-    if input is not None:
-        if 'stdin' in kwargs:
-            raise ValueError('stdin and input arguments may not both be used.')
-        kwargs['stdin'] = PIPE
-
-    proc = Popen(cmd, **kwargs)
+    proc = Popen(cmd, stdout=stdout, stderr=stderr, **kwargs)
+    stream = ProcStream(cmd, proc=proc, ok_codes=ok_codes, check=check)
     if stdout:
-        stdout = ProcStream \
-                    (cmd, proc=proc, ok_codes=ok_codes, check=check, **kwargs)
+        stdout = stream
     if stderr:
-        stderr = ProcErr \
-                    (cmd, proc=proc, ok_codes=ok_codes, check=check, **kwargs)
-
-    if not stdout and not stderr:
-        stream = ProcStream \
-                    (cmd, proc=proc, ok_codes=ok_codes, check=check, **kwargs)
+        stderr = ProcErr(cmd, proc=proc, ok_codes=ok_codes, check=check)
 
     if timeout:
         try:
             proc.wait(timeout=timeout)
         except TimeoutExpired:
             proc.kill()
-            raise TimeoutExpired(proc.args, timeout, output=stdout,
-                                 stderr=stderr)
+            raise TimeoutExpired(cmd, timeout, output=stdout, stderr=stderr)
         except:
             proc.kill()
             proc.wait()
@@ -236,7 +226,7 @@ def run(
     return CompletedProcess(cmd, retcode, stdout, stderr)
 
 
-def grab(cmd, ok_codes=0, input=None, both=False, **kwargs):
+def grab(cmd, ok_codes=0, stream=1, **kwargs):
     """takes all the same arguments as run(), but captures stdout and returns
     only that. Very practical for iterating on command output other immediate
     uses.
@@ -245,13 +235,6 @@ def grab(cmd, ok_codes=0, input=None, both=False, **kwargs):
     2>&1 at the command line). For access to both streams separately, use run()
     or Popen and read the subprocess docs.
     """
-    #function = Popen if stream else run
-    if input:
-        stdin = TemporaryFile('w+')
-        stdin.write(input)
-        stdin.seek(0)
-        kwargs['stdin'] = stdin
-
     if both:
         return ProcStream \
             (cmd, ok_codes=ok_codes, stdout=PIPE, stderr=STDOUT, **kwargs)
@@ -259,7 +242,8 @@ def grab(cmd, ok_codes=0, input=None, both=False, **kwargs):
         return ProcStream(cmd, ok_codes=ok_codes, stdout=PIPE, **kwargs)
 
 
-def pipe(commands, grab_it=False, input=None, stderr=None, **kwargs):
+def pipe(*commands, grab_it=False, input=None,
+         stdin=None, stderr=None, **kwargs):
     '''
     like the run() function, but will take a list of commands and pipe them
     into each other, one after another. If pressent, the 'stderr' parameter
@@ -268,15 +252,8 @@ def pipe(commands, grab_it=False, input=None, stderr=None, **kwargs):
 
     If grab_it=True, stdout will be returned as a ProcOutput instance.
     '''
-    if input:
-        stdin = TemporaryFile('w+')
-        stdin.write(input)
-        stdin.seek(0)
-        kwargs['stdin'] = stdin
-
-    out = Popen(
-            commands[0], stdout=PIPE, stderr=stderr
-          ).stdout
+    out = Popen(commands[0], input=input,
+                stdin=stdin, stdout=PIPE, stderr=stderr).stdout
     for cmd in commands[1:-1]:
         out = Popen(cmd, stdin=out, stdout=PIPE, stderr=stderr).stdout
     if grab_it:
@@ -327,12 +304,6 @@ class CalledProcessError(SubprocessError):
         """Alias for output attribute, to match stderr"""
         return self.output
 
-    @stdout.setter
-    def stdout(self, value):
-        # There's no obvious reason to set this, but allow it anyway so
-        # .stdout is a transparent alias for .output
-        self.output = value
-
 
 class TimeoutExpired(SubprocessError):
     """This exception is raised when the timeout expires while waiting for a
@@ -351,9 +322,3 @@ class TimeoutExpired(SubprocessError):
     @property
     def stdout(self):
         return self.output
-
-    @stdout.setter
-    def stdout(self, value):
-        # There's no obvious reason to set this, but allow it anyway so
-        # .stdout is a transparent alias for .output
-        self.output = value
