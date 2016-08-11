@@ -4,20 +4,19 @@ import io
 import os
 from tempfile import TemporaryFile
 
-ALL = 'all'
+ALL = b'a'
 
 
 class ProcStream(object):
     def __init__(self, cmd, proc=None, ok_codes=0, check=True, **kwargs):
+        self.cmd = cmd
+        self.check = check
         if isinstance(proc, sp.Popen):
             self.proc = proc
         elif proc is None:
-            self.proc = Popen(cmd, **kwargs)
+            self.proc = self._get_proc(kwargs)
         else:
-            raise TypeError \
-                ("'proc' must be a subprocess.Popen instance.")
-        self.cmd = cmd
-        self.check = check
+            raise TypeError("'proc' must be a subprocess.Popen instance.")
         self.stream = self._set_stream()
 
         self.ok_codes = set()
@@ -31,6 +30,9 @@ class ProcStream(object):
                     self.ok_codes.add(code)
                 else:
                     self.ok_codes.update(code)
+
+    def _get_proc(self, kwargs):
+        return Popen(self.cmd, stdout=PIPE, **kwargs)
 
     def _set_stream(self):
         return self.proc.stdout
@@ -70,12 +72,15 @@ class ProcStream(object):
     def __getattr__(self, name):
         try:
             return getattr(self.stream, name)
-        except AttributeError as e:
+        except AttributeError:
             try:
-                return getattr(self.str, name)
+                return getattr(self.proc, name)
             except AttributeError:
-                raise AttributeError(
-                    "'ProcStream' object has no attribute " + repr(name))
+                try:
+                    return getattr(self.str, name)
+                except AttributeError:
+                    raise AttributeError(
+                        "'ProcStream' object has no attribute " + repr(name))
 
     def __iter__(self):
         if '_tpl' in self.__dict__:
@@ -124,6 +129,9 @@ class ProcStream(object):
 
 
 class ProcErr(ProcStream):
+    def _get_proc(self, kwargs):
+        return Popen(self.cmd, stderr=PIPE, **kwargs)
+
     def _set_stream(self):
         return self.proc.stderr
 
@@ -205,6 +213,7 @@ def run(cmd, ok_codes=0, timeout=None, check=True,
     The "timeout" option is not supported on Python 2.
     """
     proc = Popen(cmd, stdout=stdout, stderr=stderr, **kwargs)
+    # move check_code() outside of ProcStream or your an idiot
     stream = ProcStream(cmd, proc=proc, ok_codes=ok_codes, check=check)
     if stdout:
         stdout = stream
@@ -235,11 +244,21 @@ def grab(cmd, ok_codes=0, stream=1, **kwargs):
     2>&1 at the command line). For access to both streams separately, use run()
     or Popen and read the subprocess docs.
     """
-    if both:
-        return ProcStream \
-            (cmd, ok_codes=ok_codes, stdout=PIPE, stderr=STDOUT, **kwargs)
+    args = {'cmd': cmd, 'ok_codes': ok_codes}
+    kwargs.update(args)
+    if stream == 1+2:
+        return ProcStream(stderr=STDOUT, **kwargs)
+    elif stream == 2:
+        return ProcErr(**kwargs)
+    elif stream == 1:
+        return ProcStream(**kwargs)
     else:
-        return ProcStream(cmd, ok_codes=ok_codes, stdout=PIPE, **kwargs)
+        raise ValueError('Valid stream values are 1 (stdout), 2 (stderr) '
+                         'and 3 (both together). got %s.' % stream)
+
+
+#def grab2(
+
 
 
 def pipe(*commands, grab_it=False, input=None,
@@ -263,8 +282,7 @@ def pipe(*commands, grab_it=False, input=None,
 
 
 # all code after this point is taken directly from the subprocess module, just
-# to get the subprocess.run interface.
-
+# to get the subprocess.run interface... mostly-ish
 PIPE = -1
 STDOUT = -2
 DEVNULL = -3
