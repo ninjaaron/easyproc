@@ -1,5 +1,5 @@
 syntax: glob
-
+*.whl
 venv*
 *.egg-info
 *.egg-info
