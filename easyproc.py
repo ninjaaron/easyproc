@@ -7,18 +7,11 @@ from tempfile import TemporaryFile
 ALL = b'a'
 
 
-class ProcStream(object):
-    def __init__(self, cmd, proc=None, ok_codes=0, check=True, **kwargs):
+class Checker:
+    def __init__(self, cmd, proc, ok_codes=0, check=True):
         self.cmd = cmd
+        self.proc = proc
         self.check = check
-        if isinstance(proc, sp.Popen):
-            self.proc = proc
-        elif proc is None:
-            self.proc = self._get_proc(kwargs)
-        else:
-            raise TypeError("'proc' must be a subprocess.Popen instance.")
-        self.stream = self._set_stream()
-
         self.ok_codes = set()
         if isinstance(ok_codes, int):
             self.ok_codes.add(ok_codes)
@@ -31,10 +24,35 @@ class ProcStream(object):
                 else:
                     self.ok_codes.update(code)
 
+    def check_code(self):
+        retcode = self.proc.wait()
+        if self.check and retcode not in self.ok_codes:
+            raise CalledProcessError(
+                retcode, self.cmd,
+                output=self.proc.stdout, stderr=self.proc.stderr)
+        return retcode
+
+
+class ProcStream(object):
+    def __init__(self, cmd, proc=None, ok_codes=0, check=True, **kwargs):
+        self.cmd = cmd
+        if isinstance(proc, sp.Popen):
+            self.proc = proc
+        elif proc is None:
+            self.proc = self._get_proc(kwargs)
+        else:
+            raise TypeError("'proc' must be a subprocess.Popen instance.")
+        self.check_code = Checker(cmd, self.proc, ok_codes, check).check_code
+
+        self.stream = self._set_stream()
+
+
     def _get_proc(self, kwargs):
         return Popen(self.cmd, stdout=PIPE, **kwargs)
 
     def _set_stream(self):
+        if not self.proc.stdout:
+            raise ValueError("ProcStream: value of stdin wasn't set to PIPE")
         return self.proc.stdout
 
     @property
@@ -133,6 +151,8 @@ class ProcErr(ProcStream):
         return Popen(self.cmd, stderr=PIPE, **kwargs)
 
     def _set_stream(self):
+        if not self.proc.stderr:
+            raise ValueError("ProcErr: value of stderr wasn't set to PIPE")
         return self.proc.stderr
 
 
@@ -213,11 +233,9 @@ def run(cmd, ok_codes=0, timeout=None, check=True,
     The "timeout" option is not supported on Python 2.
     """
     proc = Popen(cmd, stdout=stdout, stderr=stderr, **kwargs)
-    # move check_code() outside of ProcStream or your an idiot
-    stream = ProcStream(cmd, proc=proc, ok_codes=ok_codes, check=check)
-    if stdout:
-        stdout = stream
-    if stderr:
+    if stdout == PIPE:
+        stdout = ProcStream(cmd, proc=proc, ok_codes=ok_codes, check=check)
+    if stderr == PIPE:
         stderr = ProcErr(cmd, proc=proc, ok_codes=ok_codes, check=check)
 
     if timeout:
@@ -230,8 +248,8 @@ def run(cmd, ok_codes=0, timeout=None, check=True,
             proc.kill()
             proc.wait()
             raise
-
-    retcode = stream.check_code()
+    if check and ok_codes != ALL:
+        retcode = Checker(cmd, proc, ok_codes).check_code()
     return CompletedProcess(cmd, retcode, stdout, stderr)
 
 
@@ -257,8 +275,10 @@ def grab(cmd, ok_codes=0, stream=1, **kwargs):
                          'and 3 (both together). got %s.' % stream)
 
 
-#def grab2(
-
+def grab2(cmd, ok_codes=0, check=True,  **kwargs):
+    proc = Popen('cmd', stdout=PIPE, stderr=PIPE, **kwargs)
+    return (ProcStream(cmd, proc, ok_codes, check),
+            ProcErr(cmd, proc, ok_codes, check))
 
 
 def pipe(*commands, grab_it=False, input=None,
