@@ -63,7 +63,7 @@ class ProcStream(object):
             self._tpl = tuple(self._str.splitlines())
         else:
             self._tpl = tuple(self.read().splitlines())
-            self.stream.close()
+            self.close()
             self.check_code()
 
         return self._tpl
@@ -76,7 +76,7 @@ class ProcStream(object):
             self._str = '\n'.join(self._tpl)
         else:
             self._str = self.read().rstrip()
-            self.stream.close()
+            self.close()
             self.check_code()
 
         return self._str
@@ -94,20 +94,17 @@ class ProcStream(object):
             try:
                 return getattr(self.proc, name)
             except AttributeError:
-                try:
-                    return getattr(self.str, name)
-                except AttributeError:
-                    raise AttributeError(
-                        "'ProcStream' object has no attribute " + repr(name))
+                raise AttributeError(
+                    "'ProcStream' object has no attribute " + repr(name))
 
     def __iter__(self):
         if '_tpl' in self.__dict__:
             return iter(self._tpl)
         else:
             try:
-                self.stream.seek(0)
+                self.seek(0)
                 return map(str.rstrip, self.stream)
-            except io.UnsupportedOperation:
+            except (io.UnsupportedOperation, IOError):
                 return self._iter_on_stream()
 
     def _iter_on_stream(self):
@@ -116,7 +113,7 @@ class ProcStream(object):
             tmp.write(line)
             yield line.rstrip()
         self.stream = tmp
-        self.stream.seek(0)
+        self.seek(0)
         self.check_code()
 
     def __str__(self):
@@ -133,13 +130,13 @@ class ProcStream(object):
         return item in self.tuple
 
     def check_code(self):
-        retcode = self.proc.wait()
+        retcode = self.wait()
         if self.check and retcode not in self.ok_codes:
             raise CalledProcessError(
                 retcode,
                 self.cmd,
-                output=self.proc.stdout,
-                stderr=self.proc.stderr)
+                output=self.stdout,
+                stderr=self.stderr)
         return retcode
 
     def index(self, item):
@@ -151,9 +148,9 @@ class ProcErr(ProcStream):
         return Popen(self.cmd, stderr=PIPE, **kwargs)
 
     def _set_stream(self):
-        if not self.proc.stderr:
+        if not self.stderr:
             raise ValueError("ProcErr: value of stderr wasn't set to PIPE")
-        return self.proc.stderr
+        return self.stderr
 
 
 class CompletedProcess(object):
@@ -281,8 +278,7 @@ def grab2(cmd, ok_codes=0, check=True,  **kwargs):
             ProcErr(cmd, proc, ok_codes, check))
 
 
-def pipe(*commands, grab_it=False, input=None,
-         stdin=None, stderr=None, **kwargs):
+def pipe(*commands, **kwargs):
     '''
     like the run() function, but will take a list of commands and pipe them
     into each other, one after another. If pressent, the 'stderr' parameter
@@ -291,6 +287,10 @@ def pipe(*commands, grab_it=False, input=None,
 
     If grab_it=True, stdout will be returned as a ProcOutput instance.
     '''
+    grab_it = kwargs.get('grab_it', False)
+    input = kwargs.get('input', None)
+    stdin = kwargs.get('stdin', None)
+    stderr = kwargs.get('stderr', None)
     out = Popen(commands[0], input=input,
                 stdin=stdin, stdout=PIPE, stderr=stderr).stdout
     for cmd in commands[1:-1]:
