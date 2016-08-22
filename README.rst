@@ -1,13 +1,15 @@
-*easyproc* is based on the ``suprocess.run()`` function in Python 3.5 (a
-fair amount of the code is copied directly from the module). It provides
-basically the same interface, plus a couple of convenience features and
-functions to simplify administrative scripting a bit. It addresses what
-I perceive to be three shortcomings in the Popen API (in order of
-egregiousness)
+*easyproc* was originally  based on the ``suprocess.run()`` function in
+Python 3.5 (a fair amount of the code is copied directly from the
+module). It provides a similar interface for running processes, plus a
+couple of convenience features and functions to simplify administrative
+scripting a bit. It addresses what I perceive to be three shortcomings
+in the Popen API (in order of egregiousness)
 
 1. Input and output streams default to bytes. This is manifestly
-   ridiculous in Python 3. easyproc turns on *universal_newlines*
-   everywhere, so you don't have to worry about decoding bytes.
+   ridiculous in Python 3. easyproc turns on unicode by default (which
+   is ridiculously named *universal_newlines* in subprocess.Popen), so
+   you don't have to worry about decoding bytes. Need bytes? Set the
+   ``unicode`` parameter to false.
 2. Piping a chain of processes together is not particularly intuitive
    and takes a lot of extra work when not using shell=True.
    ``easyproc.pipe()`` provides a simple way to pipe a chain of shell
@@ -24,17 +26,20 @@ egregiousness)
    be annoying to split each command argument into a separate list item.
    easyproc commands can be strings or lists. If it's a string, it's run
    through ``shlex.split()`` prior to being passed to
-   ``subprocess.run()``.
-
-Additionally, easyproc defaults to error checking. As per *The Zen of
-Python*, "Errors should never pass silently -- unless explicitly
-silenced." easyproc follows this logic.
+   ``subprocess.Popen()``.
 
 *easyproc* does not replace all the functionality of the subprocess
-module by a long shot, but it does try to expose much of it by passing
-additional kwargs to ``subprocess.run()``, so many advanced use-cases
-should be possible, and one need only refer to the documentation for the
+module, but it does try to expose almost all of it by passing additional
+kwargs to ``subprocess.Popen()``, so many advanced use-cases should be
+possible, and one need only refer to the documentation for the
 subprocess module.
+
+*easyproc* also uses a special type to return process output,
+``ProcStream`` (and its child class, ``ProcErr`` for stderr). It most
+closely resembles a file-like-object and has many of the same methods.
+However, when you iterate on it, it strips newlines by default (this can
+be avoided, if desired), and it
+has special attributes for interacting with it as a string or a tuple
 
 *easyproc* provides four simple functions for messing with shell
 commands. ``easyproc.run()`` simply runs the command you give it through
@@ -67,6 +72,25 @@ may want to look at the doc string to see what it will do.
 *easyproc* also provides the three special variables from the subprocess
 module, ``PIPE``, ``STDOUT``, and ``DEVNULL``, for those who know and
 care what they do.
+
+*ok_codes*
+----------
+easyproc defaults to error checking. As per *The Zen of
+Python*, "Errors should never pass silently -- unless explicitly
+silenced." easyproc follows this logic. However, We realize that
+non-zero exit codes do not always represent an error. For example, if
+``grep`` doesn't find any matches, it exits with 1. This is not an
+*error*, simply a code that tells you something about what happened with
+the process. All easyrproc functions have as their second parameter
+(after the command itself) the ``ok_codes`` parameter, which can be an
+integer, range of integers, or in iterable containing a mix of integers
+and ranges. Any of the integers passed to this parameter will not
+produce an error if encountered, so one might want to run grep as
+``easyproc.run('grep pattern', (0, 1), stdin=somefile)``, to avoid
+raising an error if no matches are found. Additionally easyproc provides
+the ``ALL`` constant which will turn of error checking (it is equivalent
+to ``check=True``, which you can also do, if it makes you happy).
+
 
 While the ``input`` parameter for easyproc functions is inherited
 directly from ``suprocess.run()``, it may be useful for those avoiding

@@ -188,8 +188,7 @@ class CompletedProcess(object):
                                      self.stderr)
 
 
-def Popen(cmd, input=None, stdin=None,
-          universal_newlines=True, shell=False, **kwargs):
+def Popen(cmd, input=None, stdin=None, unicode=True, shell=False, **kwargs):
     """All args are passed directly to subprocess.Popen except cmd. If cmd is a
     string and shell=False (default), it will be sent through shlex.split prior
     to being sent to subprocess.Popen as *args.
@@ -210,7 +209,7 @@ def Popen(cmd, input=None, stdin=None,
     if isinstance(cmd, str) and shell == False:
         cmd = shlex.split(cmd)
 
-    return sp.Popen(cmd, stdin=stdin, universal_newlines=universal_newlines,
+    return sp.Popen(cmd, stdin=stdin, universal_newlines=unicode,
                     shell=shell, **kwargs)
 
 
