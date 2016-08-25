@@ -38,8 +38,8 @@ subprocess module.
 ``ProcStream`` (and its child class, ``ProcErr`` for stderr). It most
 closely resembles a file-like-object and has many of the same methods.
 However, when you iterate on it, it strips newlines by default (this can
-be avoided, if desired), and it
-has special attributes for interacting with it as a string or a tuple
+be avoided, if desired), and it has special attributes for interacting
+with it as a string or a tuple
 
 *easyproc* provides four simple functions for messing with shell
 commands. ``easyproc.run()`` simply runs the command you give it through
