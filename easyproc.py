@@ -249,6 +249,8 @@ def run(cmd, ok_codes=0, timeout=None, check=True,
             raise
     if check and ok_codes != ALL:
         retcode = Checker(cmd, proc, ok_codes).check_code()
+    else:
+        retcode = proc.poll()
     return CompletedProcess(cmd, retcode, stdout, stderr)
 
 
