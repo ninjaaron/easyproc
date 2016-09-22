@@ -4,7 +4,7 @@ import io
 import os
 from tempfile import TemporaryFile
 
-ALL = b'a'
+ALL = 'all'
 
 
 class Checker:
