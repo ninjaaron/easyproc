@@ -1,13 +1,53 @@
 import subprocess as sp
 import shlex
-import io
-import os
-from tempfile import TemporaryFile
+import functools
+import signal
 
 ALL = 'all'
 
 
-class Checker:
+class reify(object):
+    '"stolen" from Pylons'
+    def __init__(self, wrapped):
+        self.wrapped = wrapped
+        functools.update_wrapper(self, wrapped)
+
+    def __get__(self, inst, objtype=None):
+        if inst is None:
+            return self
+        val = self.wrapped(inst)
+        setattr(inst, self.wrapped.__name__, val)
+        return val
+
+
+class Popen(sp.Popen):
+    """All args are passed directly to subprocess.Popen except cmd. If cmd is a
+    string and shell=False (default), it will be sent through shlex.split prior
+    to being sent to subprocess.Popen as *args.
+
+    The only other difference is that this defualts universal_newlines to True
+    (unicode streams).
+    """
+    def __init__(self, cmd, input=None, stdin=None,
+                 unicode=True, shell=False, **kwargs):
+        if input is not None:
+            if stdin is not None:
+                raise ValueError(
+                    'stdin and input arguments may not both be used.')
+            stdin = PIPE
+        elif isinstance(stdin, ProcStream):
+            stdin = stdin.stream
+
+        if isinstance(cmd, str) and not shell:
+            cmd = shlex.split(cmd)
+
+        super().__init__(cmd, stdin=stdin, universal_newlines=unicode,
+                         shell=shell, **kwargs)
+        if input:
+            self._stdin_write(input)
+
+
+class Checker(object):
     def __init__(self, cmd, proc, ok_codes=0, check=True):
         self.cmd = cmd
         self.proc = proc
@@ -36,55 +76,29 @@ class Checker:
 class ProcStream(object):
     def __init__(self, cmd, proc=None, ok_codes=0, check=True, **kwargs):
         self.cmd = cmd
+        self.kwargs = kwargs
+        self.ok_codes = ok_codes
+        self.check = check
         if isinstance(proc, sp.Popen):
             self.proc = proc
-        elif proc is None:
-            self.proc = self._get_proc(kwargs)
-        else:
+        elif proc is not None:
             raise TypeError("'proc' must be a subprocess.Popen instance.")
-        self.check_code = Checker(cmd, self.proc, ok_codes, check).check_code
 
-        self.stream = self._set_stream()
+    @reify
+    def proc(self):
+        return Popen(self.cmd, stdout=PIPE, **self.kwargs)
 
-
-    def _get_proc(self, kwargs):
-        return Popen(self.cmd, stdout=PIPE, **kwargs)
-
-    def _set_stream(self):
-        if not self.proc.stdout:
-            raise ValueError("ProcStream: value of stdin wasn't set to PIPE")
+    @reify
+    def stream(self):
         return self.proc.stdout
 
-    @property
-    def tuple(self):
-        if '_tpl' in self.__dict__:
-            pass
-        elif '_str' in self.__dict__:
-            self._tpl = tuple(self._str.splitlines())
-        else:
-            self._tpl = tuple(self.read().splitlines())
-            self.stream.close()
-            self.check_code()
+    def __enter__(self):
+        self.check_code = Checker(
+            self.cmd, self.proc, self.ok_codes, self.check).check_code
+        return self
 
-        return self._tpl
-
-    @property
-    def str(self):
-        if '_str' in self.__dict__:
-            pass
-        elif '_tpl' in self.__dict__:
-            self._str = '\n'.join(self._tpl)
-        else:
-            self._str = self.read().rstrip()
-            self.stream.close()
-            self.check_code()
-
-        return self._str
-
-    @property
-    def cheap(self):
-        for i in map(str.rstrip, self.stream):
-            yield i
+    def __exit__(self, type, value, traceback):
+        self.stream.close()
         self.check_code()
 
     def __getattr__(self, name):
@@ -94,65 +108,26 @@ class ProcStream(object):
             try:
                 return getattr(self.proc, name)
             except AttributeError:
-                try:
-                    return getattr(self.str, name)
-                except AttributeError:
-                    raise AttributeError(
-                        "'ProcStream' object has no attribute " + repr(name))
+                raise AttributeError(
+                    "'ProcStream' object has no attribute " + repr(name))
 
     def __iter__(self):
-        if '_tpl' in self.__dict__:
-            return iter(self._tpl)
-        else:
-            try:
-                self.stream.seek(0)
-                return map(str.rstrip, self.stream)
-            except io.UnsupportedOperation:
-                return self._iter_on_stream()
-
-    def _iter_on_stream(self):
-        tmp = TemporaryFile('w+')
-        for line in self.stream:
-            tmp.write(line)
-            yield line.rstrip()
-        self.stream = tmp
-        self.stream.seek(0)
-        self.check_code()
+        with self:
+            for i in map(str.rstrip, self.stream):
+                yield i
 
     def __str__(self):
-        return self.str
-
-    @property
-    def len(self):
-        return len(self.tuple)
-
-    def __getitem__(self, index):
-        return self.tuple[index]
-
-    def __contains__(self, item):
-        return item in self.tuple
-
-    def check_code(self):
-        retcode = self.proc.wait()
-        if self.check and retcode not in self.ok_codes:
-            raise CalledProcessError(
-                retcode,
-                self.cmd,
-                output=self.proc.stdout,
-                stderr=self.proc.stderr)
-        return retcode
-
-    def index(self, item):
-        return self.tuple.index(item)
+        with self:
+            return self.read().rstrip()
 
 
 class ProcErr(ProcStream):
-    def _get_proc(self, kwargs):
-        return Popen(self.cmd, stderr=PIPE, **kwargs)
+    @reify
+    def proc(self):
+        return Popen(self.cmd, stderr=PIPE, **self.kwargs)
 
-    def _set_stream(self):
-        if not self.proc.stderr:
-            raise ValueError("ProcErr: value of stderr wasn't set to PIPE")
+    @reify
+    def stream(self):
         return self.proc.stderr
 
 
@@ -191,31 +166,6 @@ class CompletedProcess(object):
                                      self.stderr)
 
 
-def Popen(cmd, input=None, stdin=None, unicode=True, shell=False, **kwargs):
-    """All args are passed directly to subprocess.Popen except cmd. If cmd is a
-    string and shell=False (default), it will be sent through shlex.split prior
-    to being sent to subprocess.Popen as *args.
-
-    The only other difference is that this defualts universal_newlines to True
-    (unicode streams).
-    """
-    if input is not None:
-        if stdin is not None:
-            raise ValueError('stdin and input arguments may not both be used.')
-        stdin = TemporaryFile('w+')
-        stdin.write(input)
-        stdin.seek(0)
-
-    elif isinstance(stdin, ProcStream):
-       stdin = stdin.stream
-
-    if isinstance(cmd, str) and shell == False:
-        cmd = shlex.split(cmd)
-
-    return sp.Popen(cmd, stdin=stdin, universal_newlines=unicode,
-                    shell=shell, **kwargs)
-
-
 # this was originally subprocess.run from 3.5. Now... it's different...
 def run(cmd, ok_codes=0, timeout=None, check=True,
         stdout=None, stderr=None, **kwargs):
@@ -236,7 +186,6 @@ def run(cmd, ok_codes=0, timeout=None, check=True,
         stdout = ProcStream(cmd, proc=proc, ok_codes=ok_codes, check=check)
     if stderr == PIPE:
         stderr = ProcErr(cmd, proc=proc, ok_codes=ok_codes, check=check)
-
     if timeout:
         try:
             proc.wait(timeout=timeout)
@@ -284,14 +233,13 @@ def grab2(cmd, ok_codes=0, check=True,  **kwargs):
 
 def pipe(*commands, grab_it=False, input=None,
          stdin=None, stderr=None, **kwargs):
-    '''
-    like the run() function, but will take a list of commands and pipe them
+    """like the run() function, but will take a list of commands and pipe them
     into each other, one after another. If pressent, the 'stderr' parameter
     will be passed to all commands. Either 'input' or 'stdin' will be passed to
     the initial command all other **kwargs will be passed to the final command.
 
     If grab_it=True, stdout will be returned as a ProcOutput instance.
-    '''
+    """
     out = Popen(commands[0], input=input,
                 stdin=stdin, stdout=PIPE, stderr=stderr).stdout
     for cmd in commands[1:-1]:
@@ -309,7 +257,8 @@ STDOUT = -2
 DEVNULL = -3
 
 
-class SubprocessError(Exception): pass
+class SubprocessError(Exception):
+    pass
 
 
 class CalledProcessError(SubprocessError):
@@ -338,7 +287,7 @@ class CalledProcessError(SubprocessError):
             return "Command '%s' returned non-zero exit status %d." % (
                     self.cmd, self.returncode)
 
-    @property
+    @reify
     def stdout(self):
         """Alias for output attribute, to match stderr"""
         return self.output
@@ -358,6 +307,6 @@ class TimeoutExpired(SubprocessError):
         return ("Command '%s' timed out after %s seconds" %
                 (self.cmd, self.timeout))
 
-    @property
+    @reify
     def stdout(self):
         return self.output

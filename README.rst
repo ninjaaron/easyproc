@@ -42,7 +42,7 @@ commands. ``easyproc.run()`` simply runs the command you give it through
 ``suprocess.run()`` with *universal_newlines* turned on, and all
 additional kwargs passed along to Popen. As with ``subprocess.run()`` it
 returns as ``CompletedProcess`` instance. The only difference is that
-stdout and stderr attributes are ProcOutput instances (see below)
+stdout and stderr attributes are ProcStream instances (see below)
 instead of byte-strings. Note that the "timeout" parameters is broken in
 python 2.
 
@@ -54,9 +54,12 @@ doesn't have a return code until additional methods are called on it).
 
 ``easyproc.grab()`` is like ``easyproc.run()``, but it captures the
 stdout of the command without the bother of having to type
-``stdout=easyproc.PIPE`` and ``.stdout``. If the ``both`` parameter is
-``True``, stderr will be captured in the same stream as stdin. (same as
-``stderr=easyproc.STDIN``.)
+``stdout=easyproc.PIPE`` and ``.stdout``. The stream option, which
+defaults to 1, choses whether to grab stdin (1), stdout (2) or both
+together (1+2). (same as ``stderr=easyproc.STDIN``.) ``easyproc.grab()``
+is also a bit lazy. The process isn't actually run until you try to do
+something with the output.
+
 
 ``easyproc.pipe()`` takes any number of commands as args and pipes them
 into each other in the order they are given. The output is captured as
