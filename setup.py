@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name='easyproc',
-    version='0.4.3',
+    version='0.5.0',
     description='thin abstraction on subprocess.run to simplify admin scripts',
     long_description=open('README.rst').read(),
     url='https://github.com/ninjaaron/easyproc',

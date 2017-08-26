@@ -104,12 +104,11 @@ class ProcStream(object):
     def __getattr__(self, name):
         try:
             return getattr(self.stream, name)
-        except AttributeError:
+        except AttributeError as e:
             try:
                 return getattr(self.proc, name)
             except AttributeError:
-                raise AttributeError(
-                    "'ProcStream' object has no attribute " + repr(name))
+                raise e
 
     def __iter__(self):
         with self:
