@@ -112,8 +112,7 @@ class ProcStream(object):
 
     def __iter__(self):
         with self:
-            for i in map(str.rstrip, self.stream):
-                yield i
+            yield from map(str.rstrip, self.stream)
 
     def __str__(self):
         with self:
