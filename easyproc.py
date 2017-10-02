@@ -2,6 +2,7 @@ import subprocess as sp
 import shlex
 import functools
 import signal
+from collections import abc
 
 ALL = 'all'
 
@@ -44,7 +45,12 @@ class Popen(sp.Popen):
         super().__init__(cmd, stdin=stdin, universal_newlines=unicode,
                          shell=shell, **kwargs)
         if input:
-            self._stdin_write(input)
+            if isinstance(input, str):
+                self._stdin_write(input)
+            else:
+                for i in input:
+                    self.stdin.write(i+'\n')
+                self.stdin.close()
 
 
 class Checker(object):
@@ -248,8 +254,8 @@ def pipe(*commands, grab_it=False, input=None,
         return run(commands[-1], stdin=out, stderr=stderr, **kwargs)
 
 
-# all code after this point is taken directly from the subprocess module, just
-# to get the subprocess.run interface... mostly-ish
+# all code after this point is taken directly from the subprocess module
+# (mostly-ish) just to complete the subprocess.run interface... 
 PIPE = -1
 STDOUT = -2
 DEVNULL = -3
