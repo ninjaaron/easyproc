@@ -2,7 +2,6 @@ import subprocess as sp
 import shlex
 import functools
 import signal
-from collections import abc
 
 ALL = 'all'
 
@@ -255,7 +254,7 @@ def pipe(*commands, grab_it=False, input=None,
 
 
 # all code after this point is taken directly from the subprocess module
-# (mostly-ish) just to complete the subprocess.run interface... 
+# (mostly-ish) just to complete the subprocess.run interface...
 PIPE = -1
 STDOUT = -2
 DEVNULL = -3
