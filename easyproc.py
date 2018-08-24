@@ -26,10 +26,10 @@ class Popen(sp.Popen):
     to being sent to subprocess.Popen as *args.
 
     The only other difference is that this defualts universal_newlines to True
-    (unicode streams).
+    (streams yield Python strings instead of bytes).
     """
     def __init__(self, cmd, input=None, stdin=None,
-                 unicode=True, shell=False, **kwargs):
+                 bytes=False, shell=False, **kwargs):
         if input is not None:
             if stdin is not None:
                 raise ValueError(
@@ -41,7 +41,7 @@ class Popen(sp.Popen):
         if isinstance(cmd, str) and not shell:
             cmd = shlex.split(cmd)
 
-        super().__init__(cmd, stdin=stdin, universal_newlines=unicode,
+        super().__init__(cmd, stdin=stdin, universal_newlines=not bytes,
                          shell=shell, **kwargs)
         if input:
             if isinstance(input, str):
