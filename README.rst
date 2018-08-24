@@ -27,7 +27,7 @@ similarly to those in ``subprocess`` with a few differences:
 .. contents::
 
 
-Basics (and ``and Popen``)
+Basics (and ``Popen``)
 --------------------------
 Ok, now for a few examples.
 
