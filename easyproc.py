@@ -28,6 +28,8 @@ class Popen(sp.Popen):
     The only other difference is that this defualts universal_newlines to True
     (streams yield Python strings instead of bytes).
     """
+    __slots__ = ()
+
     def __init__(self, cmd, input=None, stdin=None,
                  bytes=False, shell=False, **kwargs):
         if input is not None:
@@ -48,34 +50,32 @@ class Popen(sp.Popen):
                 self._stdin_write(input)
             else:
                 for i in input:
-                    self.stdin.write(i+'\n')
+                    self.stdin.writelines(i, '\n')
                 self.stdin.close()
 
 
-class Checker(object):
-    def __init__(self, cmd, proc, ok_codes=0, check=True):
-        self.cmd = cmd
-        self.proc = proc
-        self.check = check
-        self.ok_codes = set()
-        if isinstance(ok_codes, int):
-            self.ok_codes.add(ok_codes)
-        elif ok_codes == ALL:
-            self.check = False
-        else:
-            for code in ok_codes:
-                if isinstance(code, int):
-                    self.ok_codes.add(code)
-                else:
-                    self.ok_codes.update(code)
+def mkchecker(cmd, proc, ok_codes=0, check=True):
+    _ok_codes = set()
+    if isinstance(ok_codes, int):
+        _ok_codes.add(ok_codes)
+    elif ok_codes == ALL:
+        check = False
+    else:
+        for code in ok_codes:
+            if isinstance(code, int):
+                _ok_codes.add(code)
+            else:
+                _ok_codes.update(code)
 
-    def check_code(self):
-        retcode = self.proc.wait()
-        if self.check and retcode not in self.ok_codes:
+    def check_code():
+        retcode = proc.wait()
+        if check and retcode not in _ok_codes:
             raise CalledProcessError(
-                retcode, self.cmd,
-                output=self.proc.stdout, stderr=self.proc.stderr)
+                retcode, cmd,
+                output=proc.stdout, stderr=proc.stderr)
         return retcode
+
+    return check_code
 
 
 class ProcStream(object):
@@ -98,8 +98,8 @@ class ProcStream(object):
         return self.proc.stdout
 
     def __enter__(self):
-        self.check_code = Checker(
-            self.cmd, self.proc, self.ok_codes, self.check).check_code
+        self.check_code = mkchecker(
+            self.cmd, self.proc, self.ok_codes, self.check)
         return self
 
     def __exit__(self, type, value, traceback):
@@ -119,9 +119,17 @@ class ProcStream(object):
         with self:
             yield from map(str.rstrip, self.stream)
 
+    def __repr__(self):
+        name = self.__class__.__name__
+        return '<{} {!r}>'.format(name, self.cmd)
+
     def __str__(self):
         with self:
             return self.read().rstrip()
+
+    def splitlines(self):
+        with self:
+            return self.read().splitlines()
 
 
 class ProcErr(ProcStream):
@@ -174,7 +182,7 @@ def run(cmd, ok_codes=0, timeout=None, check=True,
         stdout=None, stderr=None, **kwargs):
     """A clone of subprocess.run with a few small differences:
 
-        - universal_newlines enabled by default (unicode streams)
+        - unicode streams enabled by default.
         - shlex.split() run on cmd if it is a string and shell=False
         - check is True by default (raises exception on error)
         - stdout and stderr attributes of output are ProcOutput instances,
@@ -200,7 +208,7 @@ def run(cmd, ok_codes=0, timeout=None, check=True,
             proc.wait()
             raise
     if check and ok_codes != ALL:
-        retcode = Checker(cmd, proc, ok_codes).check_code()
+        retcode = mkchecker(cmd, proc, ok_codes)()
     else:
         retcode = proc.poll()
     return CompletedProcess(cmd, retcode, stdout, stderr)
