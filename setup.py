@@ -3,6 +3,7 @@ from setuptools import setup, find_packages
 setup(
     name="easyproc",
     version="0.5.1",
+    license="MPL-2.0",
     description="thin abstraction on subprocess.run to simplify admin scripts",
     long_description=open("README.rst").read(),
     url="https://github.com/ninjaaron/easyproc",
