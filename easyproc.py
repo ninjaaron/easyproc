@@ -1,13 +1,17 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
 import subprocess as sp
 import shlex
 import functools
 import signal
 
-ALL = 'all'
+ALL = "all"
 
 
-class reify(object):
-    '"stolen" from Pylons'
+class reify:
+    """"stolen" from Pylons"""
+
     def __init__(self, wrapped):
         self.wrapped = wrapped
         functools.update_wrapper(self, wrapped)
@@ -28,14 +32,13 @@ class Popen(sp.Popen):
     The only other difference is that this defualts universal_newlines to True
     (streams yield Python strings instead of bytes).
     """
+
     __slots__ = ()
 
-    def __init__(self, cmd, input=None, stdin=None,
-                 bytes=False, shell=False, **kwargs):
+    def __init__(self, cmd, input=None, stdin=None, bytes=False, shell=False, **kwargs):
         if input is not None:
             if stdin is not None:
-                raise ValueError(
-                    'stdin and input arguments may not both be used.')
+                raise ValueError("stdin and input arguments may not both be used.")
             stdin = PIPE
         elif isinstance(stdin, ProcStream):
             stdin = stdin.stream
@@ -43,14 +46,15 @@ class Popen(sp.Popen):
         if isinstance(cmd, str) and not shell:
             cmd = shlex.split(cmd)
 
-        super().__init__(cmd, stdin=stdin, universal_newlines=not bytes,
-                         shell=shell, **kwargs)
+        super().__init__(
+            cmd, stdin=stdin, universal_newlines=not bytes, shell=shell, **kwargs
+        )
         if input:
             if isinstance(input, str):
                 self._stdin_write(input)
             else:
                 for i in input:
-                    self.stdin.writelines(i, '\n')
+                    self.stdin.writelines(i, "\n")
                 self.stdin.close()
 
 
@@ -71,8 +75,8 @@ def mkchecker(cmd, proc, ok_codes=0, check=True):
         retcode = proc.wait()
         if check and retcode not in _ok_codes:
             raise CalledProcessError(
-                retcode, cmd,
-                output=proc.stdout, stderr=proc.stderr)
+                retcode, cmd, output=proc.stdout, stderr=proc.stderr
+            )
         return retcode
 
     return check_code
@@ -98,8 +102,7 @@ class ProcStream(object):
         return self.proc.stdout
 
     def __enter__(self):
-        self.check_code = mkchecker(
-            self.cmd, self.proc, self.ok_codes, self.check)
+        self.check_code = mkchecker(self.cmd, self.proc, self.ok_codes, self.check)
         return self
 
     def __exit__(self, type, value, traceback):
@@ -117,15 +120,18 @@ class ProcStream(object):
 
     def __iter__(self):
         with self:
-            yield from map(str.rstrip, self.stream)
+            yield from (i.rstrip("\n") for i in self.stream)
 
     def __repr__(self):
         name = self.__class__.__name__
-        return '<{} {!r}>'.format(name, self.cmd)
+        return "<{} {!r}>".format(name, self.cmd)
 
     def __str__(self):
         with self:
-            return self.read().rstrip()
+            _str = self.read()
+            if _str[-1] == "\n":
+                return _str[:-1]
+            return _str
 
     def splitlines(self):
         with self:
@@ -155,6 +161,7 @@ class CompletedProcess(object):
       stdout: The standard output (None if not captured).
       stderr: The standard error (None if not captured).
     """
+
     def __init__(self, args, returncode, stdout=None, stderr=None):
         self.args = args
         self.returncode = returncode
@@ -162,24 +169,26 @@ class CompletedProcess(object):
         self.stderr = stderr
 
     def __repr__(self):
-        args = ['args={!r}'.format(self.args),
-                'returncode={!r}'.format(self.returncode)]
+        args = [
+            "args={!r}".format(self.args),
+            "returncode={!r}".format(self.returncode),
+        ]
         if self.stdout is not None:
-            args.append('stdout={!r}'.format(self.stdout.str))
+            args.append("stdout={!r}".format(self.stdout.str))
         if self.stderr is not None:
-            args.append('stderr={!r}'.format(self.stderr.str))
-        return "{}({})".format(type(self).__name__, ', '.join(args))
+            args.append("stderr={!r}".format(self.stderr.str))
+        return "{}({})".format(type(self).__name__, ", ".join(args))
 
     def check_returncode(self):
         """Raise CalledProcessError if the exit code is non-zero."""
         if self.returncode:
-            raise CalledProcessError(self.returncode, self.args, self.stdout,
-                                     self.stderr)
+            raise CalledProcessError(
+                self.returncode, self.args, self.stdout, self.stderr
+            )
 
 
 # this was originally subprocess.run from 3.5. Now... it's different...
-def run(cmd, ok_codes=0, timeout=None, check=True,
-        stdout=None, stderr=None, **kwargs):
+def run(cmd, ok_codes=0, timeout=None, check=True, stdout=None, stderr=None, **kwargs):
     """A clone of subprocess.run with a few small differences:
 
         - unicode streams enabled by default.
@@ -223,27 +232,27 @@ def grab(cmd, ok_codes=0, stream=1, **kwargs):
     2>&1 at the command line). For access to both streams separately, use run()
     or Popen and read the subprocess docs.
     """
-    args = {'cmd': cmd, 'ok_codes': ok_codes}
+    args = {"cmd": cmd, "ok_codes": ok_codes}
     kwargs.update(args)
-    if stream == 1+2:
+    if stream == 1 + 2:
         return ProcStream(stderr=STDOUT, **kwargs)
     elif stream == 2:
         return ProcErr(**kwargs)
     elif stream == 1:
         return ProcStream(**kwargs)
     else:
-        raise ValueError('Valid stream values are 1 (stdout), 2 (stderr) '
-                         'and 3 (both together). got %s.' % stream)
+        raise ValueError(
+            "Valid stream values are 1 (stdout), 2 (stderr) and 3 (both together). "
+            "got %s." % stream
+        )
 
 
-def grab2(cmd, ok_codes=0, check=True,  **kwargs):
-    proc = Popen('cmd', stdout=PIPE, stderr=PIPE, **kwargs)
-    return (ProcStream(cmd, proc, ok_codes, check),
-            ProcErr(cmd, proc, ok_codes, check))
+def grab2(cmd, ok_codes=0, check=True, **kwargs):
+    proc = Popen("cmd", stdout=PIPE, stderr=PIPE, **kwargs)
+    return (ProcStream(cmd, proc, ok_codes, check), ProcErr(cmd, proc, ok_codes, check))
 
 
-def pipe(*commands, grab_it=False, input=None,
-         stdin=None, stderr=None, **kwargs):
+def pipe(*commands, grab_it=False, input=None, stdin=None, stderr=None, **kwargs):
     """like the run() function, but will take a list of commands and pipe them
     into each other, one after another. If pressent, the 'stderr' parameter
     will be passed to all commands. Either 'input' or 'stdin' will be passed to
@@ -251,8 +260,9 @@ def pipe(*commands, grab_it=False, input=None,
 
     If grab_it=True, stdout will be returned as a ProcOutput instance.
     """
-    out = Popen(commands[0], input=input,
-                stdin=stdin, stdout=PIPE, stderr=stderr).stdout
+    out = Popen(
+        commands[0], input=input, stdin=stdin, stdout=PIPE, stderr=stderr
+    ).stdout
     for cmd in commands[1:-1]:
         out = Popen(cmd, stdin=out, stdout=PIPE, stderr=stderr).stdout
     if grab_it:
@@ -280,6 +290,7 @@ class CalledProcessError(SubprocessError):
 
     check_output() will also store the output in the output attribute.
     """
+
     def __init__(self, returncode, cmd, output=None, stderr=None):
         self.returncode = returncode
         self.cmd = cmd
@@ -290,13 +301,19 @@ class CalledProcessError(SubprocessError):
         if self.returncode and self.returncode < 0:
             try:
                 return "Command '%s' died with %r." % (
-                        self.cmd, signal.Signals(-self.returncode))
+                    self.cmd,
+                    signal.Signals(-self.returncode),
+                )
             except ValueError:
                 return "Command '%s' died with unknown signal %d." % (
-                        self.cmd, -self.returncode)
+                    self.cmd,
+                    -self.returncode,
+                )
         else:
             return "Command '%s' returned non-zero exit status %d." % (
-                    self.cmd, self.returncode)
+                self.cmd,
+                self.returncode,
+            )
 
     @reify
     def stdout(self):
@@ -308,6 +325,7 @@ class TimeoutExpired(SubprocessError):
     """This exception is raised when the timeout expires while waiting for a
     child process.
     """
+
     def __init__(self, cmd, timeout, output=None, stderr=None):
         self.cmd = cmd
         self.timeout = timeout
@@ -315,8 +333,7 @@ class TimeoutExpired(SubprocessError):
         self.stderr = stderr
 
     def __str__(self):
-        return ("Command '%s' timed out after %s seconds" %
-                (self.cmd, self.timeout))
+        return "Command '%s' timed out after %s seconds" % (self.cmd, self.timeout)
 
     @reify
     def stdout(self):

@@ -1,1 +1,9 @@
-.hgignore
+syntax: glob
+*.whl
+venv*
+*.egg-info
+*.egg-info
+dist
+*.pyc
+*.pyc
+__pycache__
