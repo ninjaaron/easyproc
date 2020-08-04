@@ -5,8 +5,11 @@ import subprocess as sp
 import shlex
 import functools
 import signal
+from typing import Union, Sequence, Collection, Tuple, IO
+from numbers import Number
 
-ALL = "all"
+StrOrSeq = Union[str, Sequence[str]]
+IOorFD = Union[IO, int]
 
 
 class reify:
@@ -24,41 +27,51 @@ class reify:
         return val
 
 
-class Popen(sp.Popen):
-    """All args are passed directly to subprocess.Popen except cmd. If cmd is a
-    string and shell=False (default), it will be sent through shlex.split prior
-    to being sent to subprocess.Popen as *args.
+def Popen(
+    cmd: StrOrSeq,
+    input: StrOrSeq = None,
+    stdin: IOorFD = None,
+    bytes: bool = False,
+    shell: bool = False,
+    **kwargs,
+):
+    if input is not None:
+        if stdin is not None:
+            raise ValueError("stdin and input arguments may not both be used.")
+        stdin = PIPE
+    elif isinstance(stdin, ProcStream):
+        stdin = stdin.stream
 
-    The only other difference is that this defualts universal_newlines to True
-    (streams yield Python strings instead of bytes).
-    """
+    if isinstance(cmd, str) and not shell:
+        cmd = shlex.split(cmd)
 
-    __slots__ = ()
-
-    def __init__(self, cmd, input=None, stdin=None, bytes=False, shell=False, **kwargs):
-        if input is not None:
-            if stdin is not None:
-                raise ValueError("stdin and input arguments may not both be used.")
-            stdin = PIPE
-        elif isinstance(stdin, ProcStream):
-            stdin = stdin.stream
-
-        if isinstance(cmd, str) and not shell:
-            cmd = shlex.split(cmd)
-
-        super().__init__(
-            cmd, stdin=stdin, universal_newlines=not bytes, shell=shell, **kwargs
-        )
-        if input:
-            if isinstance(input, str):
-                self._stdin_write(input)
-            else:
-                for i in input:
-                    self.stdin.writelines(i, "\n")
-                self.stdin.close()
+    proc = sp.Popen(
+        cmd, stdin=stdin, universal_newlines=not bytes, shell=shell, **kwargs
+    )
+    if input:
+        if proc.stdin is None:
+            raise ValueError(
+                "stdin should not be None if input was used. "
+                "this branch should not be reached"
+            )
+        elif isinstance(input, str):
+            proc._stdin_write(input)  # type: ignore
+        else:
+            for i in input:
+                proc.stdin.writelines(i)
+                proc.stdin.close()
+    return proc
 
 
-def mkchecker(cmd, proc, ok_codes=0, check=True):
+ALL = -1
+
+
+def mkchecker(
+    cmd: StrOrSeq,
+    proc: sp.Popen,
+    ok_codes: Union[int, Collection[int]] = 0,
+    check: bool = True,
+):
     _ok_codes = set()
     if isinstance(ok_codes, int):
         _ok_codes.add(ok_codes)
@@ -71,7 +84,7 @@ def mkchecker(cmd, proc, ok_codes=0, check=True):
             else:
                 _ok_codes.update(code)
 
-    def check_code():
+    def check_code() -> int:
         retcode = proc.wait()
         if check and retcode not in _ok_codes:
             raise CalledProcessError(
@@ -82,8 +95,15 @@ def mkchecker(cmd, proc, ok_codes=0, check=True):
     return check_code
 
 
-class ProcStream(object):
-    def __init__(self, cmd, proc=None, ok_codes=0, check=True, **kwargs):
+class ProcStream:
+    def __init__(
+        self,
+        cmd: StrOrSeq,
+        proc: sp.Popen = None,
+        ok_codes: Union[int, Collection[int]] = 0,
+        check: bool = True,
+        **kwargs,
+    ):
         self.cmd = cmd
         self.kwargs = kwargs
         self.ok_codes = ok_codes
@@ -148,7 +168,7 @@ class ProcErr(ProcStream):
         return self.proc.stderr
 
 
-class CompletedProcess(object):
+class CompletedProcess:
     """A process that has finished running.
 
     This is returned by run(). The distinction between this and the form found
@@ -162,7 +182,13 @@ class CompletedProcess(object):
       stderr: The standard error (None if not captured).
     """
 
-    def __init__(self, args, returncode, stdout=None, stderr=None):
+    def __init__(
+        self,
+        args: Sequence[str],
+        returncode: int,
+        stdout: ProcStream = None,
+        stderr: ProcErr = None,
+    ):
         self.args = args
         self.returncode = returncode
         self.stdout = stdout
@@ -183,12 +209,20 @@ class CompletedProcess(object):
         """Raise CalledProcessError if the exit code is non-zero."""
         if self.returncode:
             raise CalledProcessError(
-                self.returncode, self.args, self.stdout, self.stderr
+                self.returncode, self.args, self.stdout.stream, self.stderr.stream
             )
 
 
 # this was originally subprocess.run from 3.5. Now... it's different...
-def run(cmd, ok_codes=0, timeout=None, check=True, stdout=None, stderr=None, **kwargs):
+def run(
+    cmd: StrOrSeq,
+    ok_codes: Union[int, Collection[int]] = 0,
+    timeout: Number = None,
+    check: bool = True,
+    stdout: Union[IOorFD] = None,
+    stderr: Union[IOorFD] = None,
+    **kwargs,
+):
     """A clone of subprocess.run with a few small differences:
 
         - unicode streams enabled by default.
@@ -202,16 +236,14 @@ def run(cmd, ok_codes=0, timeout=None, check=True, stdout=None, stderr=None, **k
     The "timeout" option is not supported on Python 2.
     """
     proc = Popen(cmd, stdout=stdout, stderr=stderr, **kwargs)
-    if stdout == PIPE:
-        stdout = ProcStream(cmd, proc=proc, ok_codes=ok_codes, check=check)
-    if stderr == PIPE:
-        stderr = ProcErr(cmd, proc=proc, ok_codes=ok_codes, check=check)
+    stdout_ = ProcStream(cmd, proc=proc, ok_codes=ok_codes, check=check)
+    stderr_ = ProcErr(cmd, proc=proc, ok_codes=ok_codes, check=check)
     if timeout:
         try:
             proc.wait(timeout=timeout)
         except TimeoutExpired:
             proc.kill()
-            raise TimeoutExpired(cmd, timeout, output=stdout, stderr=stderr)
+            raise TimeoutExpired(cmd, timeout, output=proc.stdout, stderr=proc.stderr)
         except:
             proc.kill()
             proc.wait()
@@ -220,10 +252,15 @@ def run(cmd, ok_codes=0, timeout=None, check=True, stdout=None, stderr=None, **k
         retcode = mkchecker(cmd, proc, ok_codes)()
     else:
         retcode = proc.poll()
-    return CompletedProcess(cmd, retcode, stdout, stderr)
+    return CompletedProcess(cmd, retcode, stdout_, stderr_)
 
 
-def grab(cmd, ok_codes=0, stream=1, **kwargs):
+def grab(
+    cmd: StrOrSeq,
+    ok_codes: Union[int, Collection[int]] = 0,
+    stream: IOorFD = 1,
+    **kwargs,
+):
     """takes all the same arguments as run(), but captures stdout and returns
     only that. Very practical for iterating on command output other immediate
     uses.
@@ -247,12 +284,21 @@ def grab(cmd, ok_codes=0, stream=1, **kwargs):
         )
 
 
-def grab2(cmd, ok_codes=0, check=True, **kwargs):
+def grab2(
+    cmd: StrOrSeq, ok_codes: Union[int, Collection[int]] = 0, check=True, **kwargs
+):
     proc = Popen("cmd", stdout=PIPE, stderr=PIPE, **kwargs)
     return (ProcStream(cmd, proc, ok_codes, check), ProcErr(cmd, proc, ok_codes, check))
 
 
-def pipe(*commands, grab_it=False, input=None, stdin=None, stderr=None, **kwargs):
+def pipe(
+    *commands: StrOrSeq,
+    grab_it: bool = False,
+    input: StrOrSeq = None,
+    stdin: IOorFD = None,
+    stderr: IOorFD = None,
+    **kwargs,
+):
     """like the run() function, but will take a list of commands and pipe them
     into each other, one after another. If pressent, the 'stderr' parameter
     will be passed to all commands. Either 'input' or 'stdin' will be passed to
@@ -291,7 +337,9 @@ class CalledProcessError(SubprocessError):
     check_output() will also store the output in the output attribute.
     """
 
-    def __init__(self, returncode, cmd, output=None, stderr=None):
+    def __init__(
+        self, returncode: int, cmd: StrOrSeq, output: IO = None, stderr: IO = None
+    ):
         self.returncode = returncode
         self.cmd = cmd
         self.output = output
@@ -326,7 +374,9 @@ class TimeoutExpired(SubprocessError):
     child process.
     """
 
-    def __init__(self, cmd, timeout, output=None, stderr=None):
+    def __init__(
+        self, cmd: StrOrSeq, timeout: Number, output: IO = None, stderr: IO = None,
+    ):
         self.cmd = cmd
         self.timeout = timeout
         self.output = output
